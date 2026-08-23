@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: esp32-sensor-monitoring
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python3 start.py
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: API_KEY
+        value: ESP32_SECURE_KEY_2026

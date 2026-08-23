@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ESP32 Sensor Monitoring & Threshold-Alert Dashboard
-Quickstart launcher: Starts backend server and opens web dashboard in default browser.
+Quickstart launcher: Starts backend server and binds to environment PORT.
 """
 
 import sys
@@ -19,24 +19,31 @@ from main import run_app
 
 
 def open_browser(port):
-    time.sleep(1.0)
+    time.sleep(1.2)
     url = f"http://localhost:{port}"
-    print(f"Opening browser at {url} ...")
+    print(f"Opening local browser at {url} ...")
     try:
         webbrowser.open(url)
-    except Exception as e:
-        print(f"Please open {url} manually in your browser.")
+    except Exception:
+        pass
 
 
 def main():
-    port = 8080
+    # Read port from environment (Render, Railway, Heroku, Cloud Run, etc.) or default to 8080
+    env_port = os.environ.get("PORT")
+    port = int(env_port) if env_port else 8080
+
     if len(sys.argv) > 1:
         try:
             port = int(sys.argv[1])
         except ValueError:
             pass
 
-    threading.Thread(target=open_browser, args=(port,), daemon=True).start()
+    # Only open desktop browser in local interactive development (not in headless cloud environment)
+    is_cloud = bool(os.environ.get("PORT") or os.environ.get("RENDER") or os.environ.get("DYNO") or os.environ.get("RAILWAY_ENVIRONMENT"))
+    if not is_cloud:
+        threading.Thread(target=open_browser, args=(port,), daemon=True).start()
+
     run_app(port)
 
 

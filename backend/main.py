@@ -305,7 +305,8 @@ def run_app(port: int = 8080):
 
 
 if __name__ == "__main__":
-    port = 8080
+    env_port = os.environ.get("PORT")
+    port = int(env_port) if env_port else 8080
     if len(sys.argv) > 1:
         try:
             port = int(sys.argv[1])
