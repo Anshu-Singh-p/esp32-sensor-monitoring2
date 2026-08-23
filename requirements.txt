@@ -1,0 +1,6 @@
+# ESP32 Sensor Monitoring & Threshold-Alert Dashboard
+# This project uses the Python 3.9+ standard library exclusively.
+# Zero external pip packages are required to run the server.
+#
+# Optional development dependencies:
+# pytest>=7.0.0
