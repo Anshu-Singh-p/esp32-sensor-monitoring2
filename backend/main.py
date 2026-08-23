@@ -277,9 +277,13 @@ class ProductionDashboardHandler(BaseHTTPRequestHandler):
             self.send_json(500, {"error": f"Asset read error: {e}"})
 
     def log_message(self, format, *args):
-        if "GET /api/v1/stream" in args[0] or "GET /api/v1/readings/latest" in args[0]:
-            return
-        sys.stderr.write("%s - - [%s] %s\n" % (self.address_string(), self.log_date_time_string(), format % args))
+        try:
+            msg = format % args
+            if "GET /api/v1/stream" in msg or "GET /api/v1/readings/latest" in msg or "/api/stream" in msg:
+                return
+            sys.stderr.write("%s - - [%s] %s\n" % (self.address_string(), self.log_date_time_string(), msg))
+        except Exception:
+            pass
 
 
 def run_app(port: int = 8080):
