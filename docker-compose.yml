@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  esp32-monitoring:
+    build: .
+    container_name: esp32-sensor-monitor
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - API_KEY=ESP32_SECURE_KEY_2026
+    volumes:
+      - ./backend/sensor_monitor.db:/app/backend/sensor_monitor.db
+    restart: unless-stopped

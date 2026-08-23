@@ -60,7 +60,7 @@ class DashboardApp {
       });
     });
 
-    // Modal triggers
+    // Modal triggers (Thresholds)
     const thBtn = document.getElementById("openThresholdsBtn");
     const thModal = document.getElementById("thresholdModal");
     const closeThBtn = document.getElementById("closeThresholdModal");
@@ -77,6 +77,25 @@ class DashboardApp {
     }
     if (saveThBtn) {
       saveThBtn.addEventListener("click", () => this.saveThresholdsForm());
+    }
+
+    // Modal triggers (Calibration)
+    const calBtn = document.getElementById("openCalibrationBtn");
+    const calModal = document.getElementById("calibrationModal");
+    const closeCalBtn = document.getElementById("closeCalibrationModal");
+    const saveCalBtn = document.getElementById("saveCalibrationBtn");
+
+    if (calBtn && calModal) {
+      calBtn.addEventListener("click", () => {
+        this.loadCalibrationForm();
+        calModal.classList.add("active");
+      });
+    }
+    if (closeCalBtn && calModal) {
+      closeCalBtn.addEventListener("click", () => calModal.classList.remove("active"));
+    }
+    if (saveCalBtn) {
+      saveCalBtn.addEventListener("click", () => this.saveCalibrationForm());
     }
 
     // Simulator Scenario Buttons
@@ -391,10 +410,9 @@ class DashboardApp {
   }
 
   updateAlert(alertId, newStatus) {
-    fetch(`/api/alerts/${alertId}/status`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus })
+    const action = newStatus === "ACKNOWLEDGED" ? "acknowledge" : "resolve";
+    fetch(`/api/v1/alerts/${alertId}/${action}`, {
+      method: "POST"
     }).then(() => this.fetchAlerts());
   }
 
@@ -498,12 +516,71 @@ class DashboardApp {
     });
   }
 
+  loadCalibrationForm() {
+    fetch("/api/v1/calibration")
+      .then(res => res.json())
+      .then(data => {
+        const cal = data.calibration;
+        if (!cal) return;
+
+        this.setInputValue("cal_max_red_offset", cal.max30102?.red_offset);
+        this.setInputValue("cal_max_red_scale", cal.max30102?.red_scale);
+        this.setInputValue("cal_max_ir_offset", cal.max30102?.ir_offset);
+        this.setInputValue("cal_max_ir_scale", cal.max30102?.ir_scale);
+
+        this.setInputValue("cal_mpu_ax_offset", cal.mpu6050?.ax_offset);
+        this.setInputValue("cal_mpu_ax_scale", cal.mpu6050?.ax_scale);
+
+        this.setInputValue("cal_env_temp_offset", cal.bme280_bmp280?.temp_offset);
+        this.setInputValue("cal_env_temp_scale", cal.bme280_bmp280?.temp_scale);
+        this.setInputValue("cal_env_press_offset", cal.bme280_bmp280?.press_offset);
+        this.setInputValue("cal_env_press_scale", cal.bme280_bmp280?.press_scale);
+      });
+  }
+
+  saveCalibrationForm() {
+    const p1 = fetch("/api/v1/calibration/max30102", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        red_offset: parseFloat(document.getElementById("cal_max_red_offset").value) || 0.0,
+        red_scale: parseFloat(document.getElementById("cal_max_red_scale").value) || 1.0,
+        ir_offset: parseFloat(document.getElementById("cal_max_ir_offset").value) || 0.0,
+        ir_scale: parseFloat(document.getElementById("cal_max_ir_scale").value) || 1.0
+      })
+    });
+
+    const p2 = fetch("/api/v1/calibration/mpu6050", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ax_offset: parseFloat(document.getElementById("cal_mpu_ax_offset").value) || 0.0,
+        ax_scale: parseFloat(document.getElementById("cal_mpu_ax_scale").value) || 1.0
+      })
+    });
+
+    const p3 = fetch("/api/v1/calibration/bme280_bmp280", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        temp_offset: parseFloat(document.getElementById("cal_env_temp_offset").value) || 0.0,
+        temp_scale: parseFloat(document.getElementById("cal_env_temp_scale").value) || 1.0,
+        press_offset: parseFloat(document.getElementById("cal_env_press_offset").value) || 0.0,
+        press_scale: parseFloat(document.getElementById("cal_env_press_scale").value) || 1.0
+      })
+    });
+
+    Promise.all([p1, p2, p3]).then(() => {
+      document.getElementById("calibrationModal").classList.remove("active");
+    });
+  }
+
   setSimulationScenario(scenarioName) {
     document.querySelectorAll(".sim-scenario-btn").forEach(btn => {
       btn.classList.toggle("active", btn.dataset.scenario === scenarioName);
     });
 
-    fetch("/api/simulator/scenario", {
+    fetch("/api/v1/simulator/scenario", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ scenario: scenarioName })

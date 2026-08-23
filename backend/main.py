@@ -1,6 +1,7 @@
 """
-ESP32 Sensor Monitoring & Threshold-Alert Dashboard
-Main Backend Server (HTTP, REST, Real-time Stream & Static Asset Serving)
+ESP32 Sensor Processing Backend Server
+Serves production REST API endpoints (/api/v1/...), real-time Server-Sent Events (/api/v1/stream),
+background telemetry simulator, and static dashboard assets.
 """
 
 import os
@@ -12,24 +13,24 @@ import threading
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from typing import Dict, Any, List
 
-# Ensure backend root is in sys.path
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_DIR = os.path.abspath(os.path.join(BACKEND_DIR, "..", "frontend"))
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
 from api.sensor_routes import sensor_api_routes
+from api.threshold_routes import threshold_routes
+from api.calibration_routes import calibration_routes
+from api.alert_routes import alert_routes
 from services.simulator import esp32_simulator
 from database.database import db
 
-# Active streaming client queues for live telemetry broadcast
 live_clients = set()
 live_clients_lock = threading.Lock()
 simulator_active = True
 
 
 def broadcast_telemetry(payload: Dict[str, Any]):
-    """Broadcasts live processed telemetry to all active connected streaming clients."""
     with live_clients_lock:
         if not live_clients:
             return
@@ -46,31 +47,27 @@ def broadcast_telemetry(payload: Dict[str, Any]):
 
 
 def background_simulator_loop():
-    """Continuously runs the test simulator to feed data if physical ESP32 is not currently sending packets."""
     global simulator_active
     while True:
         if simulator_active:
             try:
-                # Check if physical ESP32 has sent data within last 4 seconds
                 latest = db.get_latest_reading()
                 now = time.time()
                 last_time = latest.get("epoch_time", 0) if latest else 0
                 
-                # If no real packet in last 3 seconds, generate simulated telemetry
-                if now - last_time > 2.5:
+                if now - last_time > 2.0:
                     sim_payload = esp32_simulator.generate_payload()
                     headers = {"x-api-key": "ESP32_SECURE_KEY_2026"}
                     status_code, resp = sensor_api_routes.handle_ingest_sensor_data(headers, sim_payload)
                     if status_code == 200:
-                        # Broadcast to dashboard
                         _, latest_view = sensor_api_routes.handle_get_latest()
                         broadcast_telemetry(latest_view)
             except Exception as e:
-                print(f"[Simulator Loop Error]: {e}")
+                print(f"[Simulator Loop Exception]: {e}")
         time.sleep(1.0)
 
 
-class ESP32DashboardHandler(BaseHTTPRequestHandler):
+class ProductionDashboardHandler(BaseHTTPRequestHandler):
     def send_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
@@ -86,25 +83,50 @@ class ESP32DashboardHandler(BaseHTTPRequestHandler):
         path = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
 
-        if path == "/api/sensor-data/latest":
+        # 1. Readings
+        if path in ["/api/v1/readings/latest", "/api/sensor-data/latest"]:
             code, resp = sensor_api_routes.handle_get_latest()
             self.send_json(code, resp)
-        elif path == "/api/sensor-data/history":
+        elif path in ["/api/v1/readings/history", "/api/sensor-data/history"]:
             range_val = query.get("range", ["5m"])[0]
             code, resp = sensor_api_routes.handle_get_history(range_val)
             self.send_json(code, resp)
-        elif path == "/api/alerts":
+
+        # 2. Devices
+        elif path == "/api/v1/devices":
+            code, resp = sensor_api_routes.handle_get_devices()
+            self.send_json(code, resp)
+        elif path.startswith("/api/v1/devices/"):
+            device_id = path.split("/")[-1]
+            code, resp = sensor_api_routes.handle_get_device_detail(device_id)
+            self.send_json(code, resp)
+
+        # 3. Alerts
+        elif path in ["/api/v1/alerts", "/api/alerts"]:
             status_val = query.get("status", [None])[0]
-            code, resp = sensor_api_routes.handle_get_alerts(status_val)
+            code, resp = alert_routes.handle_get_alerts(status_val)
             self.send_json(code, resp)
-        elif path == "/api/thresholds":
-            code, resp = sensor_api_routes.handle_get_thresholds()
+
+        # 4. Thresholds
+        elif path in ["/api/v1/thresholds", "/api/thresholds"]:
+            code, resp = threshold_routes.handle_get_thresholds()
             self.send_json(code, resp)
-        elif path == "/api/device/status":
-            code, resp = sensor_api_routes.handle_get_device_status()
+
+        # 5. Calibration
+        elif path == "/api/v1/calibration":
+            code, resp = calibration_routes.handle_get_calibration()
             self.send_json(code, resp)
-        elif path in ["/api/stream", "/ws"]:
+
+        # 6. System Status
+        elif path in ["/api/v1/system/status", "/api/device/status"]:
+            code, resp = sensor_api_routes.handle_get_system_status()
+            self.send_json(code, resp)
+
+        # 7. Real-Time Stream
+        elif path in ["/api/v1/stream", "/api/stream", "/ws"]:
             self.handle_live_stream()
+
+        # 8. Static Assets
         else:
             self.serve_static(path)
 
@@ -113,43 +135,64 @@ class ESP32DashboardHandler(BaseHTTPRequestHandler):
         path = parsed.path
         body = self.read_json_body()
 
-        if path == "/api/sensor-data":
+        if path in ["/api/v1/sensor-data", "/api/sensor-data"]:
             headers_dict = {k.lower(): v for k, v in self.headers.items()}
             code, resp = sensor_api_routes.handle_ingest_sensor_data(headers_dict, body)
             if code == 200:
-                # Broadcast new reading to dashboard
                 _, latest_view = sensor_api_routes.handle_get_latest()
                 broadcast_telemetry(latest_view)
             self.send_json(code, resp)
-        elif path == "/api/simulator/scenario":
+
+        elif path.startswith("/api/v1/alerts/") and path.endswith("/acknowledge"):
+            alert_id = path.split("/")[-2]
+            code, resp = alert_routes.handle_acknowledge_alert(alert_id)
+            self.send_json(code, resp)
+
+        elif path.startswith("/api/v1/alerts/") and path.endswith("/resolve"):
+            alert_id = path.split("/")[-2]
+            code, resp = alert_routes.handle_resolve_alert(alert_id)
+            self.send_json(code, resp)
+
+        elif path in ["/api/v1/simulator/scenario", "/api/simulator/scenario"]:
             code, resp = sensor_api_routes.handle_simulator_scenario(body)
             self.send_json(code, resp)
         else:
-            self.send_json(404, {"error": "Endpoint not found."})
+            self.send_json(404, {"error": f"Endpoint '{path}' not found."})
 
     def do_PUT(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         body = self.read_json_body()
 
-        if path == "/api/thresholds":
-            code, resp = sensor_api_routes.handle_update_thresholds(body)
+        if path.startswith("/api/v1/thresholds/"):
+            param = path.split("/")[-1]
+            code, resp = threshold_routes.handle_update_threshold(param, body)
             self.send_json(code, resp)
+
+        elif path in ["/api/thresholds", "/api/v1/thresholds"]:
+            for p, cfg in body.items():
+                if isinstance(cfg, dict):
+                    threshold_routes.handle_update_threshold(p, cfg)
+            code, resp = threshold_routes.handle_get_thresholds()
+            self.send_json(code, resp)
+
+        elif path.startswith("/api/v1/calibration/"):
+            sensor = path.split("/")[-1]
+            code, resp = calibration_routes.handle_update_calibration(sensor, body)
+            self.send_json(code, resp)
+
         elif path.startswith("/api/alerts/") and path.endswith("/status"):
-            # Path: /api/alerts/<id>/status
-            parts = path.strip("/").split("/")
-            if len(parts) == 4:
-                alert_id = parts[2]
-                new_status = body.get("status", "RESOLVED")
-                code, resp = sensor_api_routes.handle_update_alert_status(alert_id, new_status)
-                self.send_json(code, resp)
+            alert_id = path.split("/")[3]
+            new_status = body.get("status", "RESOLVED")
+            if new_status == "ACKNOWLEDGED":
+                code, resp = alert_routes.handle_acknowledge_alert(alert_id)
             else:
-                self.send_json(400, {"error": "Invalid alert path format."})
+                code, resp = alert_routes.handle_resolve_alert(alert_id)
+            self.send_json(code, resp)
         else:
-            self.send_json(404, {"error": "Endpoint not found."})
+            self.send_json(404, {"error": f"Endpoint '{path}' not found."})
 
     def handle_live_stream(self):
-        """Server-Sent Events / streaming handler for live dashboard socket."""
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
@@ -160,7 +203,6 @@ class ESP32DashboardHandler(BaseHTTPRequestHandler):
         with live_clients_lock:
             live_clients.add(self.wfile)
 
-        # Send initial latest snapshot immediately
         _, latest = sensor_api_routes.handle_get_latest()
         init_data = f"data: {json.dumps(latest)}\n\n"
         try:
@@ -172,7 +214,6 @@ class ESP32DashboardHandler(BaseHTTPRequestHandler):
         try:
             while True:
                 time.sleep(10.0)
-                # Keep-alive heartbeat ping
                 self.wfile.write(b": ping\n\n")
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
@@ -236,23 +277,24 @@ class ESP32DashboardHandler(BaseHTTPRequestHandler):
             self.send_json(500, {"error": f"Asset read error: {e}"})
 
     def log_message(self, format, *args):
-        if "GET /api/stream" in args[0] or "GET /api/sensor-data/latest" in args[0]:
+        if "GET /api/v1/stream" in args[0] or "GET /api/v1/readings/latest" in args[0]:
             return
         sys.stderr.write("%s - - [%s] %s\n" % (self.address_string(), self.log_date_time_string(), format % args))
 
 
 def run_app(port: int = 8080):
-    # Start background simulator thread
     sim_thread = threading.Thread(target=background_simulator_loop, daemon=True)
     sim_thread.start()
 
     server_address = ("0.0.0.0", port)
-    httpd = ThreadingHTTPServer(server_address, ESP32DashboardHandler)
+    httpd = ThreadingHTTPServer(server_address, ProductionDashboardHandler)
     print("=" * 65)
-    print("  ESP32 SENSOR MONITORING & THRESHOLD-ALERT SYSTEM")
-    print(f"  Web Dashboard:      http://localhost:{port}")
-    print(f"  Ingestion Endpoint: http://localhost:{port}/api/sensor-data")
-    print(f"  Live Telemetry WS:  http://localhost:{port}/api/stream")
+    print("  ESP32 SENSOR DATA PROCESSING & REAL-TIME HEALTH DASHBOARD")
+    print(f"  Web Dashboard:       http://localhost:{port}")
+    print(f"  API Ingestion:       http://localhost:{port}/api/v1/sensor-data")
+    print(f"  Live Stream (SSE):   http://localhost:{port}/api/v1/stream")
+    print(f"  Thresholds API:      http://localhost:{port}/api/v1/thresholds")
+    print(f"  Calibration API:     http://localhost:{port}/api/v1/calibration")
     print("=" * 65)
 
     try:

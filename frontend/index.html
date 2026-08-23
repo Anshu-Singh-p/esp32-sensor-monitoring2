@@ -36,6 +36,7 @@
         <span class="chip-tag" id="lastUpdateTimer">Last update: Just now</span>
 
         <button class="btn-header" id="muteToggleBtn">🔊 Audio On</button>
+        <button class="btn-header" id="openCalibrationBtn">📐 Calibration</button>
         <button class="btn-header" id="openThresholdsBtn">⚙️ Threshold Settings</button>
       </div>
     </header>
@@ -542,6 +543,71 @@
       <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:0.5rem;">
         <button class="btn-header" style="background:#3b82f6; color:#ffffff; border:none; padding:8px 18px;" id="saveThresholdsBtn">
           Save Thresholds
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Calibration Settings Modal -->
+  <div class="modal-backdrop" id="calibrationModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 style="font-size:1.1rem; color:#ffffff; display:flex; align-items:center; gap:0.5rem;">
+          📐 Sensor Calibration Layer (Offset & Scale)
+        </h3>
+        <button class="close-btn" id="closeCalibrationModal">&times;</button>
+      </div>
+
+      <p style="font-size:0.78rem; color:var(--text-muted);">
+        Linear compensation: <code>corrected_value = (raw_value - offset) × scale</code>. Real-time offsets and multipliers applied in backend Stage 3.
+      </p>
+
+      <table class="threshold-table">
+        <thead>
+          <tr>
+            <th>Sensor & Channel</th>
+            <th>Offset Parameter</th>
+            <th>Scale Multiplier</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>MAX30102: Red Channel</strong></td>
+            <td><input class="th-input" type="number" id="cal_max_red_offset" value="0.0" step="100" /></td>
+            <td><input class="th-input" type="number" id="cal_max_red_scale" value="1.0" step="0.01" /></td>
+            <td>ADC Range: 0 - 262,143</td>
+          </tr>
+          <tr>
+            <td><strong>MAX30102: IR Channel</strong></td>
+            <td><input class="th-input" type="number" id="cal_max_ir_offset" value="0.0" step="100" /></td>
+            <td><input class="th-input" type="number" id="cal_max_ir_scale" value="1.0" step="0.01" /></td>
+            <td>Contact Cutoff: 40,000</td>
+          </tr>
+          <tr>
+            <td><strong>MPU6050: Accel (X/Y/Z)</strong></td>
+            <td><input class="th-input" type="number" id="cal_mpu_ax_offset" value="0.0" step="0.01" /></td>
+            <td><input class="th-input" type="number" id="cal_mpu_ax_scale" value="1.0" step="0.01" /></td>
+            <td>Gravity Zeroing ($g$)</td>
+          </tr>
+          <tr>
+            <td><strong>BME280/BMP280: Temp (°C)</strong></td>
+            <td><input class="th-input" type="number" id="cal_env_temp_offset" value="0.0" step="0.1" /></td>
+            <td><input class="th-input" type="number" id="cal_env_temp_scale" value="1.0" step="0.01" /></td>
+            <td>Self-heating comp</td>
+          </tr>
+          <tr>
+            <td><strong>BME280/BMP280: Press (hPa)</strong></td>
+            <td><input class="th-input" type="number" id="cal_env_press_offset" value="0.0" step="0.5" /></td>
+            <td><input class="th-input" type="number" id="cal_env_press_scale" value="1.0" step="0.01" /></td>
+            <td>Barometric altitude comp</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:0.5rem;">
+        <button class="btn-header" style="background:#10b981; color:#ffffff; border:none; padding:8px 18px;" id="saveCalibrationBtn">
+          Save Calibration
         </button>
       </div>
     </div>
